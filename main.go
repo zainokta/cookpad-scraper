@@ -23,9 +23,16 @@ type Recipe struct {
 	UpdatedAt time.Time
 }
 
+var (
+	conn *pgx.Conn
+	url  = "https://cookpad.com/id/cari"
+)
+
 func main() {
+	var err error
+
 	// postgres://username:password@localhost:5432/database_name
-	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	conn, err = pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -34,19 +41,6 @@ func main() {
 	if err := conn.Ping(context.Background()); err != nil {
 		log.Fatal(err.Error())
 	}
-
-	recipes := make([]Recipe, 0)
-
-	commonRecipes := []string{
-		"ayam",
-		"sayur",
-		"ikan",
-		"kue",
-		"telur",
-		"sapi",
-		"daging",
-	}
-	url := "https://cookpad.com/id/cari"
 
 	c := colly.NewCollector(
 		colly.Async(),
@@ -59,6 +53,26 @@ func main() {
 		Delay:       1 * time.Second,
 		RandomDelay: 1 * time.Second,
 	})
+
+	commonRecipes := []string{
+		"ayam",
+		"sayur",
+		"ikan",
+		"kue",
+		"telur",
+		"sapi",
+		"daging",
+	}
+
+	for _, recipe := range commonRecipes {
+		scrap(c, recipe)
+	}
+
+	log.Println("FINISHED")
+}
+
+func scrap(c *colly.Collector, category string) {
+	recipes := make([]Recipe, 0)
 
 	c.OnHTML("ul", func(e *colly.HTMLElement) {
 		e.ForEach("li", func(_ int, h *colly.HTMLElement) {
@@ -101,10 +115,8 @@ func main() {
 		fmt.Println("Visiting", r.URL.String())
 	})
 
-	for _, cr := range commonRecipes {
-		for i := 1; i <= 500; i++ {
-			c.Visit(fmt.Sprintf("%s/%s?page=%d", url, cr, i))
-		}
+	for i := 1; i <= 500; i++ {
+		c.Visit(fmt.Sprintf("%s/%s?page=%d", url, category, i))
 	}
 
 	c.Wait()
@@ -118,8 +130,8 @@ func main() {
 	}
 
 	for _, recipe := range recipes {
-		_, err = tx.Exec(context.Background(), "INSERT INTO recipes(recipe_id, title, link, image, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (recipe_id) DO UPDATE SET title = excluded.title, link = excluded.link, image = excluded.image, updated_at = now();",
-			recipe.RecipeID, recipe.Title, recipe.Link, recipe.Image, time.Now(), time.Now())
+		_, err = tx.Exec(context.Background(), "INSERT INTO recipes(recipe_id, title, link, image, category, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (recipe_id) DO UPDATE SET title = excluded.title, link = excluded.link, image = excluded.image, updated_at = now();",
+			recipe.RecipeID, recipe.Title, recipe.Link, recipe.Image, category, time.Now(), time.Now())
 		if err != nil {
 			log.Fatal(err.Error())
 		}
